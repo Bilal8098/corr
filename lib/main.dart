@@ -824,7 +824,7 @@ class _FireStoreHomeState extends State<FireStoreHome> {
           title: Column(
             children: [
               const Text(
-                'CVs Dashboardd',
+                'CVs Dashboard',
                 style: TextStyle(color: Colors.white),
               ),
             ],
