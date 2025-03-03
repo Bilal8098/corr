@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:firedart/firedart.dart';
@@ -553,7 +555,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
         }
       }
       // Upload to Firestore once valid data is extracted
-      await uploadDataToFirestore(jsonData!);
+      await uploadDataToFirestore(jsonData);
     } catch (e) {
       _showSnackbar("❌ Error: $e", Colors.red);
     } finally {
@@ -577,10 +579,34 @@ class _FireStoreHomeState extends State<FireStoreHome>
   }
 
   Widget buildCategoryChart(Map<String, int> categoryCounts) {
-    // Generate pie chart sections with consistent colors
+    // Predefined list of colors to use for each category
+    const List<Color> predefinedColors = [
+      Colors.red,
+      Colors.orange,
+      Colors.amber,
+      Colors.green,
+      Colors.blue,
+      Colors.indigo,
+      Colors.purple,
+      Colors.pink,
+      Colors.teal,
+      Colors.cyan,
+    ];
+
+    // Create a mapping from each category to a color
+    Map<String, Color> categoryColors = {};
+    int index = 0;
+    for (var category in categoryCounts.keys) {
+      categoryColors[category] =
+          predefinedColors[index % predefinedColors.length];
+      index++;
+    }
+
+    // Generate pie chart sections using the generated color mapping
     List<PieChartSectionData> sections = categoryCounts.entries.map((entry) {
+      Color color = categoryColors[entry.key]!;
       return PieChartSectionData(
-        color: _getColorForCategory(entry.key),
+        color: color,
         value: entry.value.toDouble(),
         title: '${entry.value}',
         radius: 60,
@@ -602,7 +628,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
               sections: sections,
               centerSpaceRadius: 60,
               sectionsSpace: 2,
-              startDegreeOffset: -90, // Rotate chart for better visual
+              startDegreeOffset:
+                  -90, // Rotate chart for better visual appearance
               borderData: FlBorderData(show: false),
               pieTouchData: PieTouchData(
                 touchCallback: (
@@ -622,6 +649,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
           runSpacing: 10,
           alignment: WrapAlignment.center,
           children: categoryCounts.entries.map((entry) {
+            Color color = categoryColors[entry.key]!;
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -629,7 +657,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
                   width: 12,
                   height: 12,
                   decoration: BoxDecoration(
-                    color: _getColorForCategory(entry.key),
+                    color: color,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -650,168 +678,110 @@ class _FireStoreHomeState extends State<FireStoreHome>
     );
   }
 
-  Color _getColorForCategory(String category) {
-    final colorList = Colors.primaries;
-    return colorList[category.hashCode % colorList.length].withOpacity(0.8);
-  }
+  Widget buildLanguagesProficiencyChart() {
+    // Mapping of proficiency to a numeric value (bar height)
+    Map<String, double> proficiencyBarHeightMapping = {
+      "Native": 100.0,
+      "Fluent": 75.0,
+      "Intermediate": 50.0,
+      "Beginner": 25.0,
+      "Other": 10.0,
+    };
+    Map<String, double> sumScores = {};
+    Map<String, int> countScores = {};
 
-  Widget buildCertificationsOverviewChart() {
-    List<PieChartSectionData> sections =
-        certificationCounts.entries.map((entry) {
-      return PieChartSectionData(
-        value: entry.value.toDouble(),
-        title: '${entry.key}\n(${entry.value})',
-        color: Colors.primaries[entry.key.hashCode % Colors.primaries.length],
-        radius: 60,
-        titleStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-      );
-    }).toList();
+    languageCounts.forEach((key, value) {
+      List<String> parts = key.split('(');
+      String language = parts[0].trim();
+      String proficiency =
+          parts.length > 1 ? parts[1].replaceAll(')', '').trim() : "Other";
+      double score = proficiencyBarHeightMapping[proficiency] ?? 10.0;
 
-    return SizedBox(
-      height: 300,
-      child: PieChart(
-        PieChartData(
-          sections: sections,
-          centerSpaceRadius: 80,
-          sectionsSpace: 4,
-        ),
-      ),
-    );
-  }
+      sumScores[language] = (sumScores[language] ?? 0) + (score * value);
+      countScores[language] = (countScores[language] ?? 0) + value;
+    });
 
-  Widget buildProjectsContributionChart() {
+    // Calculate average score for each language
+    Map<String, double> averageScores = {};
+    sumScores.forEach((language, sum) {
+      int count = countScores[language]!;
+      averageScores[language] = sum / count;
+    });
+
+    while (averageScores.length < 3) {
+      averageScores["Placeholder ${averageScores.length + 1}"] = 1;
+    }
+
+    List<String> languages = averageScores.keys.toList();
+
+    // Function to derive a category from the average score.
+    // You can adjust the thresholds as needed.
+    String getCategory(double score) {
+      if (score >= 90) return "Native";
+      if (score >= 65) return "Fluent";
+      if (score >= 40) return "Intermediate";
+      if (score >= 20) return "Beginner";
+      return "Other";
+    }
+
+    // Define category colors
+    Map<String, Color> categoryColors = {
+      "Native": Colors.red,
+      "Fluent": Colors.orange,
+      "Intermediate": Colors.amber,
+      "Beginner": Colors.pink,
+      "Other": Colors.grey,
+    };
+
     return SizedBox(
       height: 300,
       child: BarChart(
         BarChartData(
-          barGroups: filteredBarGroups,
+          barGroups: languages.asMap().entries.map((entry) {
+            int index = entry.key;
+            String language = entry.value;
+            double avgScore = averageScores[language]!;
+            String category = getCategory(avgScore);
+            Color barColor = categoryColors[category] ?? Colors.grey;
+
+            return BarChartGroupData(
+              x: index,
+              barRods: [
+                BarChartRodData(
+                  toY: avgScore,
+                  color: barColor,
+                  width: 20,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            );
+          }).toList(),
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: true, interval: 1),
+              sideTitles: SideTitles(showTitles: true, reservedSize: 40),
             ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                getTitlesWidget: (double value, TitleMeta meta) {
-                  String projectName = filteredBarGroups[value.toInt()]
-                      .barRods
-                      .first
-                      .toY
-                      .toString();
-                  return SideTitleWidget(
-                    axisSide: meta.axisSide,
-                    child: Text(projectName, style: TextStyle(fontSize: 10)),
-                  );
+                getTitlesWidget: (value, meta) {
+                  int index = value.toInt();
+                  if (index < languages.length) {
+                    return Text(
+                      languages[index],
+                      style: TextStyle(fontSize: 12),
+                    );
+                  }
+                  return const SizedBox.shrink();
                 },
               ),
             ),
-          ),
-          borderData: FlBorderData(show: false),
-          barTouchData: BarTouchData(
-            touchTooltipData: BarTouchTooltipData(
-              tooltipBgColor: Colors.black87.withOpacity(0.8),
-              tooltipPadding: const EdgeInsets.all(8),
-              tooltipRoundedRadius: 8,
+            // Optionally hide the top titles (i.e. values above bars)
+            topTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
             ),
           ),
-        ),
-        swapAnimationDuration: Duration(milliseconds: animateChart ? 800 : 0),
-        // Animation Duration
-        swapAnimationCurve: Curves.easeInOut,
-      ),
-    );
-  }
-
-  Widget buildLanguagesProficiencyChart() {
-    Map<String, int> displayData = Map<String, int>.from(languageCounts);
-
-    // Ensure at least 3 entries by adding placeholders
-    while (displayData.length < 3) {
-      displayData["Placeholder ${displayData.length + 1}"] = 0;
-    }
-
-    List<RadarDataSet> dataSets = [
-      RadarDataSet(
-        dataEntries: displayData.entries
-            .map((entry) => RadarEntry(value: entry.value.toDouble()))
-            .toList(),
-        fillColor: Colors.blue.withOpacity(0.4),
-        borderColor: Colors.blue,
-        entryRadius: 3,
-      ),
-    ];
-
-    return SizedBox(
-      height: 300,
-      child: RadarChart(
-        RadarChartData(
-          dataSets: dataSets,
-          radarBackgroundColor: Colors.transparent,
           borderData: FlBorderData(show: false),
-          titlePositionPercentageOffset: 0.2,
-          getTitle: (index, angle) {
-            return RadarChartTitle(
-              text: displayData.keys.elementAt(index),
-              angle: angle,
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget buildEducationTimelineChart() {
-    List<FlSpot> spots = [];
-    List<String> labels = [];
-
-    for (int i = 0; i < educationTimeline.length; i++) {
-      String dates = educationTimeline[i]['DatesAttended'] ?? '';
-      String degree = educationTimeline[i]['Degree'] ?? 'Unknown';
-      List<String> years = dates.split('–');
-
-      if (years.length == 2) {
-        double startYear =
-            double.tryParse(years[0].trim().split(' ').last) ?? 0;
-        double endYear = double.tryParse(years[1].trim().split(' ').last) ?? 0;
-
-        spots.add(FlSpot(startYear, i.toDouble()));
-        spots.add(FlSpot(endYear, i.toDouble()));
-        labels.add(degree);
-      }
-    }
-
-    return SizedBox(
-      height: 500,
-      child: LineChart(
-        LineChartData(
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: false,
-              color: Colors.blue,
-              barWidth: 3,
-              dotData: FlDotData(show: true),
-            ),
-          ],
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (double value, TitleMeta meta) {
-                  return SideTitleWidget(
-                    axisSide: meta.axisSide,
-                    child: Text(
-                      value.toInt().toString(),
-                      style: TextStyle(fontSize: 10),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          gridData: FlGridData(show: true),
-          borderData: FlBorderData(show: false),
+          gridData: FlGridData(show: false),
         ),
       ),
     );
@@ -868,6 +838,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
                     ),
                     boxShadow: [
                       BoxShadow(
+                        // ignore: deprecated_member_use
                         color: Colors.red.withOpacity(0.5),
                         blurRadius: 10,
                         spreadRadius: 2,
@@ -965,96 +936,9 @@ class _FireStoreHomeState extends State<FireStoreHome>
                               ? buildCategoryChart(categoryCounts)
                               : const Text("No data available"),
                         ),
-                        // Certifications Overview Chart
-                        Text(
-                          "Certifications Overview",
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        SizedBox(
+                          height: 20,
                         ),
-                        certificationCounts.isNotEmpty
-                            ? buildCertificationsOverviewChart()
-                            : const Text("No certifications data available"),
-
-                        const SizedBox(height: 100),
-
-                        // Education Timeline Chart
-                        Text(
-                          "Education Timeline",
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        educationTimeline.isNotEmpty
-                            ? buildEducationTimelineChart()
-                            : const Text("No education data available"),
-
-                        const SizedBox(height: 20),
-
-                        // Projects Contribution Filter Row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            // Project Name Filter
-                            DropdownButton<String>(
-                              value: selectedProjectFilter,
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  selectedProjectFilter = newValue!;
-                                });
-                                _filterProjects(); // Apply filters when selection changes
-                              },
-                              items: projectList.map<DropdownMenuItem<String>>((
-                                String value,
-                              ) {
-                                return DropdownMenuItem<String>(
-                                  value: value,
-                                  child: Text(value),
-                                );
-                              }).toList(),
-                            ),
-
-                            // Technology Filter
-                            DropdownButton<String>(
-                              value: selectedTechnologyFilter,
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  selectedTechnologyFilter = newValue!;
-                                });
-                                _filterProjects(); // Apply filters when selection changes
-                              },
-                              items:
-                                  technologyList.map<DropdownMenuItem<String>>((
-                                String value,
-                              ) {
-                                return DropdownMenuItem<String>(
-                                  value: value,
-                                  child: Text(value),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-
-                        // Projects Contribution Chart
-                        Text(
-                          "Projects Contribution",
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        filteredBarGroups.isNotEmpty
-                            ? buildProjectsContributionChart()
-                            : const Text(
-                                "No project contribution data available",
-                              ),
-
-                        const SizedBox(height: 120),
-
-                        // Languages Proficiency Chart
                         Text(
                           "Languages Proficiency",
                           style: TextStyle(
@@ -1077,34 +961,34 @@ class _FireStoreHomeState extends State<FireStoreHome>
         floatingActionButton: StatefulBuilder(
           builder: (context, setState) {
             // Local animation controller
-            final AnimationController _controller = AnimationController(
+            final AnimationController controller = AnimationController(
               duration: const Duration(milliseconds: 300),
               vsync: Scaffold.of(context),
             );
             // Local scale animation
-            final Animation<double> _scaleAnimation = Tween<double>(
+            final Animation<double> scaleAnimation = Tween<double>(
               begin: 1.0,
               end: 1.2,
             ).animate(
-              CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+              CurvedAnimation(parent: controller, curve: Curves.easeInOut),
             );
             // Local rotation animation
-            final Animation<double> _rotationAnimation = Tween<double>(
+            final Animation<double> rotationAnimation = Tween<double>(
               begin: 0.0,
               end: 1.0,
             ).animate(
-              CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+              CurvedAnimation(parent: controller, curve: Curves.easeInOut),
             );
             return ScaleTransition(
-              scale: _scaleAnimation,
+              scale: scaleAnimation,
               child: RotationTransition(
-                turns: _rotationAnimation,
+                turns: rotationAnimation,
                 child: FloatingActionButton(
                   heroTag: "Add",
-                  onPressed: () {
-                    _controller.forward();
+                  onPressed: () async {
+                    await controller.forward();
                     isUploading ? null : pickFiles();
-                    _controller.reverse();
+                    await controller.reverse();
                   },
                   backgroundColor: Colors.red[800],
                   elevation: 8,
@@ -1121,6 +1005,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
+                          // ignore: deprecated_member_use
                           color: Colors.red.withOpacity(0.5),
                           blurRadius: 10,
                           spreadRadius: 2,
@@ -1243,6 +1128,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
         color: Colors.white,
         boxShadow: [
           BoxShadow(
+            // ignore: deprecated_member_use
             color: Colors.grey.withOpacity(0.2),
             blurRadius: 12,
             spreadRadius: 4,
