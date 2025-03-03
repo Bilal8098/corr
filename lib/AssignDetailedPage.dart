@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:corr/main.dart';
 
 String formatDate(dynamic dateValue) {
   if (dateValue is DateTime) {
@@ -18,24 +19,32 @@ String formatDate(dynamic dateValue) {
   return dateValue.toString();
 }
 
-class AssignDetailedPage extends StatelessWidget {
+bool showBackButton = true;
+
+class AssignDetailedPage extends StatefulWidget {
   final Map<String, dynamic> cv;
 
   const AssignDetailedPage({super.key, required this.cv});
 
   @override
+  State<AssignDetailedPage> createState() => _AssignDetailedPageState();
+}
+
+class _AssignDetailedPageState extends State<AssignDetailedPage> {
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: showBackButton,
         backgroundColor: Colors.red[800],
-        title: cv.containsKey('uploadDate') && cv['uploadDate'] != null
+        title: widget.cv.containsKey('uploadDate') && widget.cv['uploadDate'] != null
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('CV Details',
                       style: TextStyle(color: Colors.white)),
                   Text(
-                    'Uploaded on: ${formatDate(cv['uploadDate'])}',
+                    'Uploaded on: ${formatDate(widget.cv['uploadDate'])}',
                     style: const TextStyle(fontSize: 14, color: Colors.white70),
                   ),
                 ],
@@ -118,10 +127,12 @@ class AssignDetailedPage extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: const Icon(
+                  child: showBackButton ? Icon(
                     Icons.assignment_return,
                     color: Colors.white,
                     size: 28,
+                  ) : CircularProgressIndicator(
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -134,7 +145,8 @@ class AssignDetailedPage extends StatelessWidget {
 
   Future<void> _returnCVtocollictionCVS(BuildContext context) async {
     try {
-      final documentId = cv['id'];
+      final documentId = widget.cv['id'];
+              setState(() => showBackButton = false); // Hide back button
 
       // Fetch the current CV data from the 'Assign' collection.
       final cvData = await Firestore.instance
@@ -151,38 +163,24 @@ class AssignDetailedPage extends StatelessWidget {
           .collection('CV')
           .document(documentId)
           .set(updatedData);
-
       // Remove the document from the 'Assign' collection.
       await Firestore.instance
           .collection('Assign')
           .document(documentId)
           .delete();
-
-      // Update the local state so the UI reflects the change.
-      // Since this is a StatelessWidget, you cannot use setState.
-      // You can use a callback or other state management solution to update the UI.
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CV returned successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showSnackbar('CV returned successfully', Colors.green);
+                    setState(() => showBackButton = true); // Hide back button
 
       Navigator.of(context).pop();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error return CV: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnackbar('Error returning CV: $e', Colors.red);
+                          setState(() => showBackButton = true); // Hide back button
+
     }
   }
 
   Widget _buildDetailCard(BuildContext context) {
-    final sortedEntries = cv.entries.toList()
+    final sortedEntries = widget.cv.entries.toList()
       ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
 
     final halfLength = (sortedEntries.length / 2).ceil();
@@ -197,7 +195,7 @@ class AssignDetailedPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (cv['isAssigned'] == "Yes")
+            if (widget.cv['isAssigned'] == "Yes")
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -220,7 +218,8 @@ class AssignDetailedPage extends StatelessWidget {
                     children: firstColumnEntries.map((entry) {
                       if (entry.key == "id" ||
                           entry.key == 'uploadDate' ||
-                          entry.key == "isAssigned") {
+                          entry.key == "isAssigned" ||
+                          entry.key == "isArchived") {
                         return const SizedBox();
                       }
                       return _buildDetailRow(context, entry.key, entry.value);
@@ -234,7 +233,8 @@ class AssignDetailedPage extends StatelessWidget {
                     children: secondColumnEntries.map((entry) {
                       if (entry.key == "id" ||
                           entry.key == 'uploadDate' ||
-                          entry.key == "isAssigned") {
+                          entry.key == "isAssigned" ||
+                          entry.key == "isArchived") {
                         return const SizedBox();
                       }
                       return _buildDetailRow(context, entry.key, entry.value);
@@ -341,8 +341,7 @@ class AssignDetailedPage extends StatelessWidget {
               icon: const Icon(Icons.copy, size: 16),
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: text));
-                _showSnackbar(
-                    'Phone number copied to clipboard', Colors.green, context);
+                _showSnackbar('Phone number copied to clipboard', Colors.green);
               },
             ),
           ],
@@ -458,8 +457,8 @@ class AssignDetailedPage extends StatelessWidget {
   }
 }
 
-void _showSnackbar(String message, Color color, BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
+void _showSnackbar(String message, Color color) {
+  rootScaffoldMessengerKey.currentState?.showSnackBar(
     SnackBar(
       content: Text(message),
       backgroundColor: color,

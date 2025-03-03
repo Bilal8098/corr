@@ -1,3 +1,4 @@
+import 'package:corr/main.dart';
 import 'package:firedart/firestore/firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,12 +17,15 @@ class CVDetailPage extends StatefulWidget {
   State<CVDetailPage> createState() => _CVDetailPageState();
 }
 
-class _CVDetailPageState extends State<CVDetailPage> {
+bool showBackButton = true;
+
+class _CVDetailPageState extends State<CVDetailPage>
+    with TickerProviderStateMixin {
+  late Map<String, dynamic> cv;
+
   void main() async {
     Firestore.initialize(CVDetailPage.projectId);
   }
-
-  late Map<String, dynamic> cv;
 
   Future<bool> _documentExistsInArchive() async {
     final documentId = cv['id'];
@@ -47,6 +51,7 @@ class _CVDetailPageState extends State<CVDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: showBackButton,
         backgroundColor: Colors.red[800],
         title: cv.containsKey('uploadDate') && cv['uploadDate'] != null
             ? Column(
@@ -61,31 +66,30 @@ class _CVDetailPageState extends State<CVDetailPage> {
                 ],
               )
             : const Text('CV Details', style: TextStyle(color: Colors.white)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: showBackButton
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          children: [
-            _buildDetailCard(context),
-          ],
+          children: [_buildDetailCard(context)],
         ),
       ),
-      // Only show archive/unarchive and assign options
+      // Floating Action Buttons without blocking multiple presses.
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          // Archive/Unarchive Button
           StatefulBuilder(
-            builder: (context, setState) {
-              // Local animation controller
+            builder: (context, localSetState) {
               final AnimationController _controller = AnimationController(
                 duration: const Duration(milliseconds: 300),
-                vsync: Scaffold.of(context),
+                vsync: this,
               );
-              // Local scale animation
               final Animation<double> _scaleAnimation = Tween<double>(
                 begin: 1.0,
                 end: 1.2,
@@ -95,7 +99,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
                   curve: Curves.easeInOut,
                 ),
               );
-              // Local rotation animation
               final Animation<double> _rotationAnimation = Tween<double>(
                 begin: 0.0,
                 end: 1.0,
@@ -105,7 +108,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
                   curve: Curves.easeInOut,
                 ),
               );
-
               return ScaleTransition(
                 scale: _scaleAnimation,
                 child: RotationTransition(
@@ -113,19 +115,19 @@ class _CVDetailPageState extends State<CVDetailPage> {
                   child: FloatingActionButton(
                     heroTag:
                         cv['isArchived'] == 'Yes' ? "Unarchive" : "Archive",
-                    onPressed: () {
-                      // Trigger the animation
-                      _controller.forward().then(
-                            (_) => _controller.reverse(),
-                          );
-                      // Call the original function based on the condition
-                      if (cv['isArchived'] == 'Yes') {
-                        _unarchiveCV();
-                      } else {
-                        _archiveCV();
-                      }
-                    },
-                    backgroundColor: Colors.red[800],
+                    onPressed: showBackButton
+                        ? () async {
+                            await _controller.forward();
+                            if (cv['isArchived'] == 'Yes') {
+                              await _unarchiveCV();
+                            } else {
+                              await _archiveCV();
+                            }
+                            await _controller.reverse();
+                          }
+                        : null,
+                    backgroundColor:
+                        showBackButton ? Colors.red[800] : Colors.grey,
                     elevation: 8,
                     tooltip: cv['isArchived'] == 'Yes'
                         ? 'Unarchive CV'
@@ -149,29 +151,32 @@ class _CVDetailPageState extends State<CVDetailPage> {
                           ),
                         ],
                       ),
-                      child: Icon(
-                        cv['isArchived'] == 'Yes'
-                            ? Icons.outbox_outlined
-                            : Icons.archive,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      child: showBackButton
+                          ? Icon(
+                              cv['isArchived'] == 'Yes'
+                                  ? Icons.outbox_outlined
+                                  : Icons.archive,
+                              color: Colors.white,
+                              size: 28,
+                            )
+                          : CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                     ),
                   ),
                 ),
               );
             },
           ),
+          // Assign Button (only show if not archived)
           if (cv['isArchived'] != 'Yes') ...[
             const SizedBox(width: 10),
             StatefulBuilder(
-              builder: (context, setState) {
-                // Local animation controller
+              builder: (context, localSetState) {
                 final AnimationController _controller = AnimationController(
                   duration: const Duration(milliseconds: 300),
-                  vsync: Scaffold.of(context),
+                  vsync: this,
                 );
-                // Local scale animation
                 final Animation<double> _scaleAnimation = Tween<double>(
                   begin: 1.0,
                   end: 1.2,
@@ -181,7 +186,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
                     curve: Curves.easeInOut,
                   ),
                 );
-                // Local rotation animation
                 final Animation<double> _rotationAnimation = Tween<double>(
                   begin: 0.0,
                   end: 1.0,
@@ -198,14 +202,13 @@ class _CVDetailPageState extends State<CVDetailPage> {
                     turns: _rotationAnimation,
                     child: FloatingActionButton(
                       heroTag: "Assign",
-                      onPressed: () {
-                        // Trigger the animation
-                        _controller.forward().then(
-                              (_) => _controller.reverse(),
-                            );
-                        // Call the original function
-                        _assignCV();
-                      },
+                      onPressed: showBackButton
+                          ? () async {
+                              await _controller.forward();
+                              await _assignCV();
+                              await _controller.reverse();
+                            }
+                          : null,
                       backgroundColor: Colors.red[800],
                       elevation: 8,
                       tooltip: 'Assign CV',
@@ -228,11 +231,15 @@ class _CVDetailPageState extends State<CVDetailPage> {
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.assignment_ind_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
+                        child: showBackButton
+                            ? Icon(
+                                Icons.assignment_ind_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              )
+                            : CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
                       ),
                     ),
                   ),
@@ -248,154 +255,114 @@ class _CVDetailPageState extends State<CVDetailPage> {
   // Function to archive a CV
   Future<void> _archiveCV() async {
     try {
-      final documentId = cv['id'];
+      setState(() => showBackButton = false);
 
+      final documentId = cv['id'];
       // Fetch the current CV data from the 'CV' collection.
       final cvData =
           await Firestore.instance.collection('CV').document(documentId).get();
-
       // Create a new map with updated isArchived field.
       final updatedData = Map<String, dynamic>.from(cvData.map);
       updatedData['isArchived'] = 'Yes';
-
       // Save the updated data to the Archive collection.
       await Firestore.instance
           .collection('Archive')
           .document(documentId)
           .set(updatedData);
-
       // Remove the document from the 'CV' collection.
       await Firestore.instance.collection('CV').document(documentId).delete();
-
       // Update the local state so the UI reflects the change.
       setState(() {
         cv['isArchived'] = 'Yes';
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CV archived successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      setState(() => showBackButton = true); // Hide back button
 
       Navigator.of(context).pop();
+      _showSnackbar('CV archived successfully', Colors.green);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error archiving CV: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() => showBackButton = true); // Hide back button
+
+      _showSnackbar('Error archiving CV: $e', Colors.red);
     }
   }
 
   // Function to unarchive a CV
   Future<void> _unarchiveCV() async {
     try {
-      final documentId = cv['id'];
+      setState(() => showBackButton = false);
 
+      final documentId = cv['id'];
       // Fetch the CV data from the Archive collection.
       final cvData = await Firestore.instance
           .collection('Archive')
           .document(documentId)
           .get();
-
       // Create a new map with updated isArchived field.
       final updatedData = Map<String, dynamic>.from(cvData.map);
       updatedData['isArchived'] = 'No';
-
       // Move the document to the 'CV' collection using the updated data.
       await Firestore.instance
           .collection('CV')
           .document(documentId)
           .set(updatedData);
-
       // Delete the document from the Archive collection.
       await Firestore.instance
           .collection('Archive')
           .document(documentId)
           .delete();
-
       // Update the local state so the UI reflects the change.
       setState(() {
         cv['isArchived'] = 'No';
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CV unarchived successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
-
+      setState(() => showBackButton = true); // Hide back button
       Navigator.of(context).pop();
+      _showSnackbar('CV unArchived successfully', Colors.green);
     } catch (e) {
-      debugPrint('Error unarchiving CV: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error unarchiving CV: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() => showBackButton = true); // Hide back button
+
+      _showSnackbar('Error unArchiving CV: $e', Colors.red);
     }
   }
 
   // Function to assign a CV
   Future<void> _assignCV() async {
     try {
+      setState(() => showBackButton = false);
       final documentId = cv['id'];
-
       // Fetch the current CV data from the 'CV' or 'Archive' collection.
       final cvData = await Firestore.instance
           .collection(widget.isArchived ? 'Archive' : 'CV')
           .document(documentId)
           .get();
-
       // Create a new map with updated isAssigned field.
       final updatedData = Map<String, dynamic>.from(cvData.map);
       updatedData['isAssigned'] = 'Yes';
-
       // Save the updated data to the Assign collection.
       await Firestore.instance
           .collection('Assign')
           .document(documentId)
           .set(updatedData);
-
       // Remove the document from the 'CV' or 'Archive' collection.
       await Firestore.instance
           .collection(widget.isArchived ? 'Archive' : 'CV')
           .document(documentId)
           .delete();
-
       // Update the local state so the UI reflects the change.
       setState(() {
         cv['isAssigned'] = 'Yes';
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CV assigned successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      setState(() => showBackButton = true); // Hide back button
 
       Navigator.of(context).pop();
+      _showSnackbar('CV Assigned successfully', Colors.green);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error assigning CV: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() => showBackButton = true); // Hide back button
+      _showSnackbar('Error assigning CV: $e', Colors.red);
     }
   }
 
   void _showSnackbar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    rootScaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: color,
@@ -407,11 +374,9 @@ class _CVDetailPageState extends State<CVDetailPage> {
   Widget _buildDetailCard(BuildContext context) {
     final sortedEntries = cv.entries.toList()
       ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-
     final halfLength = (sortedEntries.length / 2).ceil();
     final firstColumnEntries = sortedEntries.sublist(0, halfLength);
     final secondColumnEntries = sortedEntries.sublist(halfLength);
-
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -424,9 +389,8 @@ class _CVDetailPageState extends State<CVDetailPage> {
               future: _documentExistsInArchive(),
               builder: (context, snapshot) {
                 bool archived = snapshot.data ?? false;
-                return
-                    archived ?
-                      Container(
+                return archived
+                    ? Container(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
@@ -438,7 +402,8 @@ class _CVDetailPageState extends State<CVDetailPage> {
                           'Archived',
                           style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
-                      ) : SizedBox();
+                      )
+                    : SizedBox();
               },
             ),
             const SizedBox(height: 8),
@@ -466,7 +431,7 @@ class _CVDetailPageState extends State<CVDetailPage> {
                     children: secondColumnEntries.map((entry) {
                       if (entry.key == "id" ||
                           entry.key == 'uploadDate' ||
-                          entry.key == "isAssigned" || 
+                          entry.key == "isAssigned" ||
                           entry.key == "isArchived") {
                         return const SizedBox();
                       }
@@ -490,7 +455,7 @@ class _CVDetailPageState extends State<CVDetailPage> {
         final parsedDate = DateTime.parse(dateValue);
         return DateFormat('yyyy-MM-dd').format(parsedDate);
       } catch (e) {
-        return dateValue; // Return the original string if parsing fails.
+        return dateValue;
       }
     }
     return dateValue.toString();
@@ -517,19 +482,14 @@ class _CVDetailPageState extends State<CVDetailPage> {
                   fit: FlexFit.loose,
                   child: Wrap(
                     children: [
-                      Text(
-                        '${entry.key}: ',
-                        style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.red,
-                            fontWeight: FontWeight.bold),
-                        softWrap: true,
-                      ),
-                      Text(
-                        '${entry.value}',
-                        style: const TextStyle(fontSize: 16),
-                        softWrap: true,
-                      ),
+                      Text('${entry.key}: ',
+                          style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold),
+                          softWrap: true),
+                      Text('${entry.value}',
+                          style: const TextStyle(fontSize: 16), softWrap: true),
                     ],
                   ),
                 ),
@@ -540,19 +500,15 @@ class _CVDetailPageState extends State<CVDetailPage> {
       );
     }
 
-// Helper function to try all supported date formats and return the formatted date.
-// Returns the formatted date (yyyy-MM-dd) only if the text is a valid date with a time part.
-// Otherwise, returns null.
     String? tryFormatDate(String text) {
       try {
         DateTime parsedDate = DateTime.parse(text);
-        // Check if the text appears to include a time part (e.g. contains a space or colon).
         if (text.contains(' ') || text.contains(':')) {
           return DateFormat('yyyy-MM-dd').format(parsedDate);
         }
-        return null; // Text is a date already without a time part or not in the expected format.
+        return null;
       } catch (e) {
-        return null; // Not a valid date.
+        return null;
       }
     }
 
@@ -560,15 +516,11 @@ class _CVDetailPageState extends State<CVDetailPage> {
       final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
       final urlRegex = RegExp(r'^(http|https):\/\/');
       final phoneRegex = RegExp(r'^\+?[0-9\s\-\(\)]+$');
-
       TextStyle linkStyle = const TextStyle(
-        fontSize: 16,
-        color: Colors.blue,
-        decoration: TextDecoration.underline,
-      );
+          fontSize: 16,
+          color: Colors.blue,
+          decoration: TextDecoration.underline);
       TextStyle normalStyle = const TextStyle(fontSize: 16);
-
-      // Ensure URLs start with https://
       String finalUrl = text;
       if (!urlRegex.hasMatch(text) &&
           (text.startsWith("www.") ||
@@ -576,14 +528,10 @@ class _CVDetailPageState extends State<CVDetailPage> {
               text.contains("github.com"))) {
         finalUrl = "https://$text";
       }
-
-      // Try to format the text as a date.
       String? formattedDate = tryFormatDate(text);
       if (formattedDate != null) {
         return Text(formattedDate, style: normalStyle, softWrap: true);
       }
-
-      // Check if the text is a phone number.
       if (phoneRegex.hasMatch(text)) {
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -599,8 +547,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
           ],
         );
       }
-
-      // Check if the text is a URL.
       if (urlRegex.hasMatch(finalUrl)) {
         return InkWell(
           onTap: () async {
@@ -614,8 +560,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
           child: Text(text, style: linkStyle, softWrap: true),
         );
       }
-
-      // Check if the text is an email.
       if (emailRegex.hasMatch(text)) {
         return InkWell(
           onTap: () async {
@@ -629,8 +573,6 @@ class _CVDetailPageState extends State<CVDetailPage> {
           child: Text(text, style: linkStyle, softWrap: true),
         );
       }
-
-      // Default: plain text.
       return Text(text, style: normalStyle, softWrap: true);
     }
 
@@ -653,20 +595,11 @@ class _CVDetailPageState extends State<CVDetailPage> {
 
     Widget buildLabel(String label) {
       TextStyle headerStyle = const TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.bold,
-        color: Colors.black,
-      );
+          fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black);
       TextStyle subHeaderStyle = const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        color: Colors.grey,
-      );
+          fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey);
       TextStyle fieldLabelStyle = TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: Colors.red[800]!,
-      );
+          fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red[800]!);
 
       String lowerLabel = label.toLowerCase();
       if (lowerLabel.contains("header") && !lowerLabel.contains("sub")) {

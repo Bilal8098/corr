@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firedart/firedart.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firedart/generated/google/protobuf/timestamp.pb.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:process_run/process_run.dart';
@@ -10,11 +9,11 @@ import 'package:flutter/material.dart';
 import 'assign page.dart';
 import 'CVDetailedPage.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' as cl;
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
 const projectId = 'ocrcv-1e6fe';
-
+final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 void main() async {
   Firestore.initialize(projectId);
   runApp(const FireStoreApp());
@@ -26,6 +25,7 @@ class FireStoreApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       title: 'CV Dashboard',
       theme: ThemeData(
@@ -44,7 +44,8 @@ class FireStoreHome extends StatefulWidget {
   _FireStoreHomeState createState() => _FireStoreHomeState();
 }
 
-class _FireStoreHomeState extends State<FireStoreHome> {
+class _FireStoreHomeState extends State<FireStoreHome>
+    with SingleTickerProviderStateMixin {
   CollectionReference cvCollection = Firestore.instance.collection('CV');
   List<File> selectedFiles = [];
   bool isUploading = false;
@@ -55,7 +56,8 @@ class _FireStoreHomeState extends State<FireStoreHome> {
   List<Map<String, dynamic>> displayedCVs = [];
   String searchQuery = "";
   final ScrollController _scrollController = ScrollController();
-
+  late AnimationController _controller;
+  late Animation<double> _rotationAnimation;
   bool isSkillsChecked = false;
   bool isCertificationChecked = false;
   bool isEducationChecked = false;
@@ -84,6 +86,14 @@ class _FireStoreHomeState extends State<FireStoreHome> {
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _rotationAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     getData();
   }
 
@@ -105,7 +115,6 @@ class _FireStoreHomeState extends State<FireStoreHome> {
         collection = Firestore.instance.collection('CV');
       }
 
-      // Retrieve all documents without filtering out missing dates
       final querySnapshot = await collection.get();
 
       List<Map<String, dynamic>> docs = querySnapshot.map((doc) {
@@ -114,10 +123,7 @@ class _FireStoreHomeState extends State<FireStoreHome> {
         // Handle 'uploadDate' conversion
         dynamic uploadDate = data['uploadDate'];
         DateTime? parsedDate;
-
-        if (uploadDate is cl.Timestamp) {
-          parsedDate = uploadDate.toDate();
-        } else if (uploadDate is String) {
+        if (uploadDate is String) {
           try {
             parsedDate = DateFormat('yyyy-MM-dd').parse(uploadDate);
           } catch (e) {
@@ -131,6 +137,11 @@ class _FireStoreHomeState extends State<FireStoreHome> {
           "uploadDate": parsedDate, // Ensure it's a DateTime object
         };
       }).toList();
+
+      // Filter CVs: Only include those with isArchived == 'No' if collection is 'CV'
+      if (!showAssignedCVs && !showArchivedCVs) {
+        docs = docs.where((cv) => cv['isArchived'] == 'No').toList();
+      }
 
       // Sort: First, those with a date (newest first), then those without a date
       docs.sort((a, b) {
@@ -198,17 +209,13 @@ class _FireStoreHomeState extends State<FireStoreHome> {
         _showSnackbar("⚠ Error fetching data: $errorMessage", Colors.red);
       }
     }
-
     setState(() => isLoading = false);
   }
 
   Future<void> assignCV(Map<String, dynamic> cv) async {
     try {
-      // Add the CV to the Assign collection
-
       await Firestore.instance.collection('Assign').add(cv);
 
-      // Remove the CV from the original collection
       if (showArchivedCVs) {
         await Firestore.instance
             .collection('Archive')
@@ -225,7 +232,7 @@ class _FireStoreHomeState extends State<FireStoreHome> {
   }
 
   void _showSnackbar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    rootScaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: color,
@@ -839,7 +846,7 @@ class _FireStoreHomeState extends State<FireStoreHome> {
                 );
               },
               icon: Tooltip(
-                message: 'Assigned CVs',
+                message: 'Assigned CVs', // Tooltip message
                 margin: const EdgeInsets.only(top: 10),
                 padding: const EdgeInsets.all(10),
                 preferBelow: false,
@@ -851,112 +858,71 @@ class _FireStoreHomeState extends State<FireStoreHome> {
                   color: Colors.white,
                   fontSize: 14,
                 ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Colors.red[800]!, Colors.red[600]!],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.red.withOpacity(0.5),
-                            blurRadius: 10,
-                            spreadRadius: 2,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.all(8),
-                      child: const Icon(
-                        Icons.assignment_turned_in_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [Colors.red[800]!, Colors.red[600]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    Positioned(
-                      top: -35,
-                      child: AnimatedOpacity(
-                        opacity: 1.0,
-                        duration: const Duration(milliseconds: 300),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black87,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 5,
-                                spreadRadius: 1,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            "Assign CV to Manager",
-                            style: TextStyle(color: Colors.white, fontSize: 14),
-                          ),
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.red.withOpacity(0.5),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: const Icon(
+                    Icons.assignment_turned_in_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                 ),
               ),
             ),
             IconButton(
-              onPressed: () {},
-              icon: StatefulBuilder(
-                builder: (context, setState) {
-                  bool isRotating = false;
-                  return IconButton(
-                    onPressed: () {
-                      setState(() {
-                        isRotating = !isRotating;
-                      });
-                      getData();
+              onPressed: () {
+                // Trigger the animation
+                _controller.forward().then((_) {
+                  _controller.reset(); // Reset the animation for the next press
+                });
+                // Call the original function
+                getData();
+              },
+              icon: Tooltip(
+                message: 'Refresh',
+                margin: const EdgeInsets.only(top: 10),
+                padding: const EdgeInsets.all(10), // Padding inside the tooltip
+                preferBelow: false, // Show tooltip above the icon
+                decoration: BoxDecoration(
+                  color: Colors.black, // Background color
+                  borderRadius: BorderRadius.circular(8), // Rounded corners
+                ),
+                textStyle: const TextStyle(
+                  color: Colors.white, // Text color
+                  fontSize: 14,
+                ),
+                child: RotationTransition(
+                  turns: _rotationAnimation,
+                  child: ShaderMask(
+                    shaderCallback: (Rect bounds) {
+                      return const LinearGradient(
+                        colors: [Colors.white, Colors.redAccent],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ).createShader(bounds);
                     },
-                    icon: Tooltip(
-                      message: 'Refresh',
-                      margin: const EdgeInsets.only(top: 10),
-                      padding: const EdgeInsets.all(10),
-                      preferBelow: false,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                      child: AnimatedRotation(
-                        duration: const Duration(milliseconds: 500),
-                        turns: isRotating ? 1 : 0,
-                        child: ShaderMask(
-                          shaderCallback: (Rect bounds) {
-                            return const LinearGradient(
-                              colors: [Colors.white, Colors.redAccent],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ).createShader(bounds);
-                          },
-                          child: const Icon(
-                            Icons.refresh,
-                            size: 28,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                    child: const Icon(
+                      Icons.refresh,
+                      size: 28,
+                      color: Colors.white,
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 20),
@@ -1129,7 +1095,6 @@ class _FireStoreHomeState extends State<FireStoreHome> {
             ).animate(
               CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
             );
-
             return ScaleTransition(
               scale: _scaleAnimation,
               child: RotationTransition(
@@ -1137,14 +1102,13 @@ class _FireStoreHomeState extends State<FireStoreHome> {
                 child: FloatingActionButton(
                   heroTag: "Add",
                   onPressed: () {
+                    _controller.forward();
                     isUploading ? null : pickFiles();
-                    // Trigger the animation
-                    // controller.forward().then(() => _controller.reverse());
-                    // Add your action here
+                    _controller.reverse();
                   },
                   backgroundColor: Colors.red[800],
                   elevation: 8,
-                  tooltip: 'Add Files',
+                  tooltip: 'Add CV(s)',
                   child: Container(
                     width: 60,
                     height: 60,
