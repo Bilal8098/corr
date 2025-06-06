@@ -2,28 +2,35 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'package:corr/Auth/Login.dart';
+import 'package:corr/Auth/TokenStore.dart';
 import 'package:firedart/firedart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:corr/services/DataProcessing.dart';
+import 'package:corr/services/chart_utils.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:process_run/process_run.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'assign page.dart';
 import 'CVDetailedPage.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
 const projectId = 'ocrcv-1e6fe';
+const apiKey = 'AIzaSyDnaZOW6MCx7O1hnNEbKdWgvWjyZ8SOSb0';
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+
 void main() async {
   Firestore.initialize(projectId);
-  runApp(const FireStoreApp());
+  FirebaseAuth.initialize(apiKey, VolatileStore());
+  runApp(MaterialApp(home: MyTokenStore()));
 }
 
 class FireStoreApp extends StatelessWidget {
   const FireStoreApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -72,7 +79,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
   // Chart Data Variables
   Map<String, int> certificationCounts = {};
   List<Map<String, String>> educationTimeline = [];
-  Map<String, int> languageCounts = {};
+  Map<String, double> languageCounts = {};
   Map<String, int> projectContributions = {};
   Map<String, int> applicationStatusCounts = {};
   List<String> projectList = ["All Projects"];
@@ -168,11 +175,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
 
       // Process data for UI
       _processCategoryData();
-      _processCertificationsOverview();
-      _processEducationTimeline();
-      _processLanguagesProficiency();
-      _processProjectsContribution();
-      _processJobApplicationsStatus();
+
+      DataProcessing.processLanguagesAverage(allCVs);
 
       projectList = ["All Projects"];
       technologyList = ["All Technologies"];
@@ -198,6 +202,13 @@ class _FireStoreHomeState extends State<FireStoreHome>
           }
         }
       }
+      Map<String, double> processedLanguages =
+          DataProcessing.processLanguagesAverage(allCVs);
+
+      // 🔹 تحديث `setState()` لضمان تحديث UI
+      setState(() {
+        languageCounts = processedLanguages; // حفظ البيانات بشكل صحيح
+      });
       _filterProjects();
       _applyFilters();
     } catch (e) {
@@ -265,25 +276,34 @@ class _FireStoreHomeState extends State<FireStoreHome>
     List<Map<String, dynamic>> filtered = allCVs.where((cv) {
       if (isEducationChecked &&
           (cv['Education'] == null ||
-              (cv['Education'] is List && cv['Education'].isEmpty))) {
+              (cv['Education'] is List && cv['Education'].isEmpty) ||
+              (cv['Education'] is String &&
+                  cv['Education'].contains('not provided')))) {
         return false;
       }
 
       if (isSkillsChecked &&
           (cv['Skills'] == null ||
-              (cv['Skills'] is List && cv['Skills'].isEmpty))) {
+              (cv['Skills'] is List && cv['Skills'].isEmpty) ||
+              (cv['Skills'] is String &&
+                  cv['Skills'].contains('not provided')))) {
         return false;
       }
-
       if (isCertificationChecked &&
           (cv['Certifications'] == null ||
-              (cv['Certifications'] is List && cv['Certifications'].isEmpty))) {
+              (cv['Certifications'] is List && cv['Certifications'].isEmpty) ||
+              (cv['Certifications'] is String &&
+                      cv['Certifications'].contains('not provided') ||
+                  cv['Certifications']
+                      .contains('dont have any Certifications')))) {
         return false;
       }
 
       if (isLanguageChecked &&
           (cv['Languages'] == null ||
-              (cv['Languages'] is List && cv['Languages'].isEmpty))) {
+              (cv['Languages'] is List && cv['Languages'].isEmpty) ||
+              (cv['Languages'] is String &&
+                  cv['Languages'].contains('not provided')))) {
         return false;
       }
       if (searchQuery.isNotEmpty) {
@@ -347,7 +367,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx', 'txt'],
+      allowedExtensions: ['pdf', 'docx', 'txt', '.jpg', 'png', 'jpeg'],
+      //(.pdf, .docx, .jpg, .jpeg, .txt, .png
       allowMultiple: true,
     );
 
@@ -358,46 +379,6 @@ class _FireStoreHomeState extends State<FireStoreHome>
 
       for (var file in selectedFiles) {
         await runPythonScript(file.path);
-      }
-    }
-  }
-
-  void _processCertificationsOverview() {
-    certificationCounts.clear();
-
-    certificationCounts["Completed"] =
-        allCVs.where((cv) => cv["Certifications"] != null).length;
-    certificationCounts["In Progress"] =
-        allCVs.where((cv) => cv["Certifications"] == null).length;
-  }
-
-  // 🔹 3. Education Timeline
-  void _processEducationTimeline() {
-    educationTimeline.clear();
-
-    for (var cv in allCVs) {
-      if (cv['Education'] is List) {
-        for (var edu in cv['Education']) {
-          if (edu is Map && edu['Degree'] is String) {
-            educationTimeline.add({
-              "Degree": edu['Degree'],
-              "DatesAttended": edu['DatesAttended'] ?? "",
-            });
-          }
-        }
-      }
-    }
-  }
-
-  // 🔹 4. Languages Proficiency
-  void _processLanguagesProficiency() {
-    languageCounts.clear();
-
-    for (var cv in allCVs) {
-      if (cv['Languages'] is List) {
-        for (var language in cv['Languages']) {
-          languageCounts[language] = (languageCounts[language] ?? 0) + 1;
-        }
       }
     }
   }
@@ -453,55 +434,6 @@ class _FireStoreHomeState extends State<FireStoreHome>
     setState(() {
       filteredBarGroups = barGroups; // Ensure this is set
     });
-  } // 🔹 5. Projects Contribution
-
-  void _processProjectsContribution() {
-    projectContributions.clear();
-
-    for (var cv in allCVs) {
-      if (cv['Projects'] is List) {
-        for (var project in cv['Projects']) {
-          if (project is Map && project['Role'] is String) {
-            projectContributions[project['Role']] =
-                (projectContributions[project['Role']] ?? 0) + 1;
-          }
-        }
-      }
-    }
-  }
-
-  // 🔹 6. Job Applications Status
-  void _processJobApplicationsStatus() {
-    applicationStatusCounts.clear();
-
-    applicationStatusCounts["Submitted"] = allCVs
-        .where(
-          (cv) =>
-              cv["ApplicationTracking"] != null &&
-              cv["ApplicationTracking"]["Status"] == "Submitted",
-        )
-        .length;
-    applicationStatusCounts["Interview Scheduled"] = allCVs
-        .where(
-          (cv) =>
-              cv["ApplicationTracking"] != null &&
-              cv["ApplicationTracking"]["Status"] == "Interview Scheduled",
-        )
-        .length;
-    applicationStatusCounts["Accepted"] = allCVs
-        .where(
-          (cv) =>
-              cv["ApplicationTracking"] != null &&
-              cv["ApplicationTracking"]["Status"] == "Accepted",
-        )
-        .length;
-    applicationStatusCounts["Rejected"] = allCVs
-        .where(
-          (cv) =>
-              cv["ApplicationTracking"] != null &&
-              cv["ApplicationTracking"]["Status"] == "Rejected",
-        )
-        .length;
   }
 
   void _processCategoryData() {
@@ -578,212 +510,18 @@ class _FireStoreHomeState extends State<FireStoreHome>
     }
   }
 
-  Widget buildCategoryChart(Map<String, int> categoryCounts) {
-    // Predefined list of colors to use for each category
-    const List<Color> predefinedColors = [
-      Colors.red,
-      Colors.orange,
-      Colors.amber,
-      Colors.green,
-      Colors.blue,
-      Colors.indigo,
-      Colors.purple,
-      Colors.pink,
-      Colors.teal,
-      Colors.cyan,
-    ];
+  Future<void> signOut(BuildContext context) async {
+    // Sign out from Firebase (if the API provides a sign-out method)
+    FirebaseAuth.instance.signOut();
 
-    // Create a mapping from each category to a color
-    Map<String, Color> categoryColors = {};
-    int index = 0;
-    for (var category in categoryCounts.keys) {
-      categoryColors[category] =
-          predefinedColors[index % predefinedColors.length];
-      index++;
-    }
+    // Clear the token from SharedPreferences
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('accessToken');
 
-    // Generate pie chart sections using the generated color mapping
-    List<PieChartSectionData> sections = categoryCounts.entries.map((entry) {
-      Color color = categoryColors[entry.key]!;
-      return PieChartSectionData(
-        color: color,
-        value: entry.value.toDouble(),
-        title: '${entry.value}',
-        radius: 60,
-        titleStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-      );
-    }).toList();
-
-    return Column(
-      children: [
-        // Pie Chart
-        SizedBox(
-          height: 300,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              centerSpaceRadius: 60,
-              sectionsSpace: 2,
-              startDegreeOffset:
-                  -90, // Rotate chart for better visual appearance
-              borderData: FlBorderData(show: false),
-              pieTouchData: PieTouchData(
-                touchCallback: (
-                  FlTouchEvent event,
-                  PieTouchResponse? touchResponse,
-                ) {
-                  // Add interactivity (e.g., highlight section on touch)
-                },
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Legend
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          alignment: WrapAlignment.center,
-          children: categoryCounts.entries.map((entry) {
-            Color color = categoryColors[entry.key]!;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  entry.key,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget buildLanguagesProficiencyChart() {
-    // Mapping of proficiency to a numeric value (bar height)
-    Map<String, double> proficiencyBarHeightMapping = {
-      "Native": 100.0,
-      "Fluent": 75.0,
-      "Intermediate": 50.0,
-      "Beginner": 25.0,
-      "Other": 10.0,
-    };
-    Map<String, double> sumScores = {};
-    Map<String, int> countScores = {};
-
-    languageCounts.forEach((key, value) {
-      List<String> parts = key.split('(');
-      String language = parts[0].trim();
-      String proficiency =
-          parts.length > 1 ? parts[1].replaceAll(')', '').trim() : "Other";
-      double score = proficiencyBarHeightMapping[proficiency] ?? 10.0;
-
-      sumScores[language] = (sumScores[language] ?? 0) + (score * value);
-      countScores[language] = (countScores[language] ?? 0) + value;
-    });
-
-    // Calculate average score for each language
-    Map<String, double> averageScores = {};
-    sumScores.forEach((language, sum) {
-      int count = countScores[language]!;
-      averageScores[language] = sum / count;
-    });
-
-    while (averageScores.length < 3) {
-      averageScores["Placeholder ${averageScores.length + 1}"] = 1;
-    }
-
-    List<String> languages = averageScores.keys.toList();
-
-    // Function to derive a category from the average score.
-    // You can adjust the thresholds as needed.
-    String getCategory(double score) {
-      if (score >= 90) return "Native";
-      if (score >= 65) return "Fluent";
-      if (score >= 40) return "Intermediate";
-      if (score >= 20) return "Beginner";
-      return "Other";
-    }
-
-    // Define category colors
-    Map<String, Color> categoryColors = {
-      "Native": Colors.red,
-      "Fluent": Colors.orange,
-      "Intermediate": Colors.amber,
-      "Beginner": Colors.pink,
-      "Other": Colors.grey,
-    };
-
-    return SizedBox(
-      height: 300,
-      child: BarChart(
-        BarChartData(
-          barGroups: languages.asMap().entries.map((entry) {
-            int index = entry.key;
-            String language = entry.value;
-            double avgScore = averageScores[language]!;
-            String category = getCategory(avgScore);
-            Color barColor = categoryColors[category] ?? Colors.grey;
-
-            return BarChartGroupData(
-              x: index,
-              barRods: [
-                BarChartRodData(
-                  toY: avgScore,
-                  color: barColor,
-                  width: 20,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ],
-            );
-          }).toList(),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: true, reservedSize: 40),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  int index = value.toInt();
-                  if (index < languages.length) {
-                    return Text(
-                      languages[index],
-                      style: TextStyle(fontSize: 12),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-            ),
-            // Optionally hide the top titles (i.e. values above bars)
-            topTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          gridData: FlGridData(show: false),
-        ),
-      ),
+    // Navigate back to the sign-in page
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => signInpage()),
     );
   }
 
@@ -791,11 +529,18 @@ class _FireStoreHomeState extends State<FireStoreHome>
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
+          leading: IconButton(
+              onPressed: () async {
+                await signOut(context);
+              },
+              icon: Icon(
+                Icons.output_outlined,
+                color: Colors.white,
+              )),
           automaticallyImplyLeading: false,
           backgroundColor: Colors.red[800],
           title: Column(
@@ -933,7 +678,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
                       children: [
                         Center(
                           child: categoryCounts.isNotEmpty
-                              ? buildCategoryChart(categoryCounts)
+                              ? ChartUtils.buildCategoryChart(categoryCounts)
                               : const Text("No data available"),
                         ),
                         SizedBox(
@@ -948,7 +693,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
                         ),
                         const SizedBox(height: 15),
                         languageCounts.isNotEmpty
-                            ? buildLanguagesProficiencyChart()
+                            ? ChartUtils.buildLanguagesProficiencyChart(
+                                languageCounts)
                             : const Text("No languages data available"),
                       ],
                     ),
@@ -1174,29 +920,45 @@ class _FireStoreHomeState extends State<FireStoreHome>
                 _buildSectionHeader('Content Filters'),
                 const SizedBox(height: 16),
                 _buildFilterItem(
-                  title: 'Skills',
-                  icon: Icons.work_outline,
-                  value: isSkillsChecked,
-                  onChanged: (v) => setState(() => isSkillsChecked = v!),
-                ),
+                    title: 'Skills',
+                    icon: Icons.work_outline,
+                    value: isSkillsChecked,
+                    onChanged: (v) {
+                      setState(() {
+                        isSkillsChecked = v!;
+                        _applyFilters();
+                      });
+                    }),
                 _buildFilterItem(
-                  title: 'Certifications',
-                  icon: Icons.verified_outlined,
-                  value: isCertificationChecked,
-                  onChanged: (v) => setState(() => isCertificationChecked = v!),
-                ),
+                    title: 'Certifications',
+                    icon: Icons.verified_outlined,
+                    value: isCertificationChecked,
+                    onChanged: (v) {
+                      setState(() {
+                        isCertificationChecked = v!;
+                        _applyFilters();
+                      });
+                    }),
                 _buildFilterItem(
-                  title: 'Education',
-                  icon: Icons.school_outlined,
-                  value: isEducationChecked,
-                  onChanged: (v) => setState(() => isEducationChecked = v!),
-                ),
+                    title: 'Education',
+                    icon: Icons.school_outlined,
+                    value: isEducationChecked,
+                    onChanged: (v) {
+                      setState(() {
+                        isEducationChecked = v!;
+                        _applyFilters();
+                      });
+                    }),
                 _buildFilterItem(
-                  title: 'Languages',
-                  icon: Icons.language_outlined,
-                  value: isLanguageChecked,
-                  onChanged: (v) => setState(() => isLanguageChecked = v!),
-                ),
+                    title: 'Languages',
+                    icon: Icons.language_outlined,
+                    value: isLanguageChecked,
+                    onChanged: (v) {
+                      setState(() {
+                        isLanguageChecked = v!;
+                        _applyFilters();
+                      });
+                    }),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [

@@ -47,6 +47,52 @@ class _CVDetailPageState extends State<CVDetailPage>
     cv = widget.cv;
   }
 
+  Future<void> _deleteCV() async {
+    // Show confirmation dialog before deletion
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete CV',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: const Text(
+            'Are you sure you want to delete this CV?\nThis action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        setState(() => showBackButton = false);
+        final documentId = cv['id'];
+        // Determine the collection name based on the archive state.
+        final collectionName = cv['isArchived'] == 'Yes' ? 'Archive' : 'CV';
+        // Delete the document from Firestore.
+        await Firestore.instance
+            .collection(collectionName)
+            .document(documentId)
+            .delete();
+        setState(() => showBackButton = true);
+        Navigator.of(context).pop();
+        _showSnackbar('CV deleted successfully', Colors.green);
+      } catch (e) {
+        setState(() => showBackButton = true);
+        _showSnackbar('Error deleting CV: $e', Colors.red);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -72,6 +118,16 @@ class _CVDetailPageState extends State<CVDetailPage>
                 onPressed: () => Navigator.pop(context),
               )
             : null,
+        actions: [
+          IconButton(
+              onPressed: () async {
+                await _deleteCV();
+              },
+              icon: Icon(
+                Icons.delete,
+                color: Colors.white,
+              ))
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
