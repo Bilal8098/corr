@@ -4,11 +4,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:corr/Auth/Login.dart';
 import 'package:corr/Auth/TokenStore.dart';
+import 'package:corr/local_storage.dart';
 import 'package:firedart/firedart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:corr/services/DataProcessing.dart';
 import 'package:corr/services/chart_utils.dart';
+import 'package:hive/hive.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:process_run/process_run.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +28,8 @@ final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
 
 void main() async {
   Firestore.initialize(projectId);
+  final appDir = await getApplicationDocumentsDirectory();
+  Hive.init(appDir.path);
   FirebaseAuth.initialize(apiKey, VolatileStore());
   runApp(MaterialApp(home: MyTokenStore()));
 }
@@ -95,6 +100,7 @@ class _FireStoreHomeState extends State<FireStoreHome>
   @override
   void initState() {
     super.initState();
+    _initLocalStorage();
     _controller = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
@@ -110,6 +116,20 @@ class _FireStoreHomeState extends State<FireStoreHome>
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _initLocalStorage() async {
+    await LocalStorage.init();
+    _loadLocalData();
+  }
+
+  void _loadLocalData() {
+    final localCVs = LocalStorage.getCVs();
+    if (localCVs.isNotEmpty) {
+      setState(() {
+        allCVs = localCVs;
+      });
+    }
   }
 
   Future<void> getData() async {
@@ -170,6 +190,9 @@ class _FireStoreHomeState extends State<FireStoreHome>
             !isFieldEmpty(cv["Email address"]);
       }).toList();
 
+      // Save to local storage
+      await LocalStorage.saveCVs(allCVs);
+
       // Update the CV count
       cvCount = allCVs.length;
 
@@ -221,6 +244,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
       } else {
         _showSnackbar("⚠ Error fetching data: $errorMessage", Colors.red);
       }
+    } finally {
+      _showSnackbar("⚠ Using offline data.", Colors.orange);
     }
     setState(() => isLoading = false);
   }
@@ -238,6 +263,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
         await Firestore.instance.collection('CV').document(cv['id']).delete();
       }
       _showSnackbar("CV assigned successfully!", Colors.green);
+      await LocalStorage.updateCV(cv);
+
       getData(); // Refresh the data
     } catch (e) {
       _showSnackbar("Error assigning CV: $e", Colors.red);
@@ -504,6 +531,8 @@ class _FireStoreHomeState extends State<FireStoreHome>
         "✅ Data uploaded to Firestore: ${document.id}",
         Colors.green,
       );
+      await LocalStorage.updateCV({...data, 'id': document.id});
+
       getData();
     } catch (e) {
       _showSnackbar("❌ Error uploading data: $e", Colors.red);

@@ -83,12 +83,12 @@ class _CVDetailPageState extends State<CVDetailPage>
             .collection(collectionName)
             .document(documentId)
             .delete();
-        setState(() => showBackButton = true);
         Navigator.of(context).pop();
         _showSnackbar('CV deleted successfully', Colors.green);
       } catch (e) {
-        setState(() => showBackButton = true);
         _showSnackbar('Error deleting CV: $e', Colors.red);
+      } finally {
+        setState(() => showBackButton = true);
       }
     }
   }
@@ -331,14 +331,13 @@ class _CVDetailPageState extends State<CVDetailPage>
       setState(() {
         cv['isArchived'] = 'Yes';
       });
-      setState(() => showBackButton = true); // Hide back button
 
       Navigator.of(context).pop();
       _showSnackbar('CV archived successfully', Colors.green);
     } catch (e) {
-      setState(() => showBackButton = true); // Hide back button
-
       _showSnackbar('Error archiving CV: $e', Colors.red);
+    } finally {
+      setState(() => showBackButton = true);
     }
   }
 
@@ -370,13 +369,12 @@ class _CVDetailPageState extends State<CVDetailPage>
       setState(() {
         cv['isArchived'] = 'No';
       });
-      setState(() => showBackButton = true); // Hide back button
       Navigator.of(context).pop();
       _showSnackbar('CV unArchived successfully', Colors.green);
     } catch (e) {
-      setState(() => showBackButton = true); // Hide back button
-
       _showSnackbar('Error unArchiving CV: $e', Colors.red);
+    } finally {
+      setState(() => showBackButton = true);
     }
   }
 
@@ -407,13 +405,13 @@ class _CVDetailPageState extends State<CVDetailPage>
       setState(() {
         cv['isAssigned'] = 'Yes';
       });
-      setState(() => showBackButton = true); // Hide back button
 
       Navigator.of(context).pop();
       _showSnackbar('CV Assigned successfully', Colors.green);
     } catch (e) {
-      setState(() => showBackButton = true); // Hide back button
       _showSnackbar('Error assigning CV: $e', Colors.red);
+    } finally {
+      setState(() => showBackButton = true);
     }
   }
 
